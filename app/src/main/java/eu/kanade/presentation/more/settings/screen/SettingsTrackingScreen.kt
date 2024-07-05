@@ -47,6 +47,7 @@ import eu.kanade.tachiyomi.data.track.Tracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.data.track.anilist.AnilistApi
 import eu.kanade.tachiyomi.data.track.bangumi.BangumiApi
+import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
 import eu.kanade.tachiyomi.data.track.myanimelist.MyAnimeListApi
 import eu.kanade.tachiyomi.data.track.shikimori.ShikimoriApi
 import eu.kanade.tachiyomi.util.system.openInBrowser
@@ -153,10 +154,10 @@ object SettingsTrackingScreen : SearchableSettings {
                         logout = { dialog = LogoutDialog(trackerManager.mangaUpdates) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
-                        title = trackerManager.shikimori.name,
-                        tracker = trackerManager.shikimori,
-                        login = { context.openInBrowser(ShikimoriApi.authUrl(), forceDefaultBrowser = true) },
-                        logout = { dialog = LogoutDialog(trackerManager.shikimori) },
+                        title = trackerManager.hikka.name,
+                        tracker = trackerManager.hikka,
+                        login = { dialog = LoginDialog(trackerManager.hikka, MR.strings.username) },
+                        logout = { dialog = LogoutDialog(trackerManager.hikka) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
                         title = trackerManager.bangumi.name,
