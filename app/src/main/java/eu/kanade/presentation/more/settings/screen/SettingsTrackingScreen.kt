@@ -91,11 +91,19 @@ object SettingsTrackingScreen : SearchableSettings {
         dialog?.run {
             when (this) {
                 is LoginDialog -> {
-                    TrackingLoginDialog(
-                        tracker = tracker,
-                        uNameStringRes = uNameStringRes,
-                        onDismissRequest = { dialog = null },
-                    )
+                    if (tracker.name != "Hikka") {
+                        TrackingLoginDialog(
+                            tracker = tracker,
+                            uNameStringRes = uNameStringRes,
+                            onDismissRequest = { dialog = null },
+                        )
+                    } else {
+                        TrackingAuthDialog(
+                            tracker = tracker,
+                            uNameStringRes = uNameStringRes,
+                            onDismissRequest = { dialog = null },
+                        )
+                    }
                 }
                 is LogoutDialog -> {
                     TrackingLogoutDialog(
@@ -156,7 +164,7 @@ object SettingsTrackingScreen : SearchableSettings {
                     Preference.PreferenceItem.TrackerPreference(
                         title = trackerManager.hikka.name,
                         tracker = trackerManager.hikka,
-                        login = { dialog = LoginDialog(trackerManager.hikka, MR.strings.username) },
+                        login = { dialog = LoginDialog(trackerManager.hikka, MR.strings.login) },
                         logout = { dialog = LogoutDialog(trackerManager.hikka) },
                     ),
                     Preference.PreferenceItem.TrackerPreference(
@@ -285,6 +293,23 @@ object SettingsTrackingScreen : SearchableSettings {
         )
     }
 
+    private suspend fun checkAuth(
+        context: Context,
+        tracker: Tracker,
+        username: String,
+        password: String,
+    ): Boolean {
+        return try {
+            tracker.login(username, password)
+            withUIContext { context.toast(MR.strings.login_success) }
+            true
+        } catch (e: Throwable) {
+            tracker.logout()
+            withUIContext { context.toast(e.message.toString()) }
+            false
+        }
+    }
+
     private suspend fun checkLogin(
         context: Context,
         tracker: Tracker,
@@ -300,6 +325,95 @@ object SettingsTrackingScreen : SearchableSettings {
             withUIContext { context.toast(e.message.toString()) }
             false
         }
+    }
+
+    @Composable
+    private fun TrackingAuthDialog(
+        tracker: Tracker,
+        uNameStringRes: StringResource,
+        onDismissRequest: () -> Unit,
+    ) {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+
+        var auth by remember { mutableStateOf(TextFieldValue(tracker.getPassword())) }
+        var processing by remember { mutableStateOf(false) }
+        var inputError by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = onDismissRequest,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(MR.strings.login_title, tracker.name),
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismissRequest) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = stringResource(MR.strings.action_close),
+                        )
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    var hideAuth by remember { mutableStateOf(true) }
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = auth,
+                        onValueChange = { auth = it },
+                        label = { Text(text = "Auth code") },
+                        trailingIcon = {
+                            IconButton(onClick = { hideAuth = !hideAuth }) {
+                                Icon(
+                                    imageVector = if (hideAuth) {
+                                        Icons.Filled.Visibility
+                                    } else {
+                                        Icons.Filled.VisibilityOff
+                                    },
+                                    contentDescription = null,
+                                )
+                            }
+                        },
+                        visualTransformation = if (hideAuth) {
+                            PasswordVisualTransformation()
+                        } else {
+                            VisualTransformation.None
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                        ),
+                        singleLine = true,
+                        isError = inputError && !processing,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !processing && auth.text.isNotBlank(),
+                    onClick = {
+                        scope.launchIO {
+                            processing = true
+                            val result = checkLogin(
+                                context = context,
+                                tracker = tracker,
+                                username = "",
+                                password = auth.text,
+                            )
+                            inputError = !result
+                            if (result) onDismissRequest()
+                            processing = false
+                        }
+                    },
+                ) {
+                    val id = if (processing) MR.strings.loading else MR.strings.login
+                    Text(text = stringResource(id))
+                }
+            },
+        )
     }
 
     @Composable
@@ -344,6 +458,11 @@ object SettingsTrackingScreen : SearchableSettings {
         )
     }
 }
+
+private data class AuthDialog(
+    val tracker: Tracker,
+    val uNameStringRes: StringResource,
+)
 
 private data class LoginDialog(
     val tracker: Tracker,

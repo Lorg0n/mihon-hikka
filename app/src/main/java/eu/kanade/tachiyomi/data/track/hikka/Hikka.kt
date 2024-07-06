@@ -6,6 +6,7 @@ import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.BaseTracker
 import eu.kanade.tachiyomi.data.track.DeletableTracker
+import eu.kanade.tachiyomi.data.track.hikka.dto.toTrackSearch
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.ListItem
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.Rating
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.copyTo
@@ -13,17 +14,18 @@ import eu.kanade.tachiyomi.data.track.mangaupdates.dto.toTrackSearch
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.serialization.SerialName
 import tachiyomi.i18n.MR
 import tachiyomi.domain.track.model.Track as DomainTrack
 
 class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
 
     companion object {
-        const val READING_LIST = 0L
-        const val WISH_LIST = 1L
-        const val COMPLETE_LIST = 2L
-        const val UNFINISHED_LIST = 3L
-        const val ON_HOLD_LIST = 4L
+        const val READING = 0L // Список для читання
+        const val PLANNED = 1L // Список бажань
+        const val COMPLETED = 2L // Список завершених
+        const val DROPPED = 3L // Список незавершених
+        const val ON_HOLD = 4L // Список на паузі
 
         private val SCORE_LIST = (0..10)
             .flatMap { decimal ->
@@ -47,23 +49,23 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
     override fun getLogoColor(): Int = Color.rgb(0, 0, 0)
 
     override fun getStatusList(): List<Long> {
-        return listOf(READING_LIST, COMPLETE_LIST, ON_HOLD_LIST, UNFINISHED_LIST, WISH_LIST)
+        return listOf(READING, COMPLETED, ON_HOLD, DROPPED, PLANNED)
     }
 
     override fun getStatus(status: Long): StringResource? = when (status) {
-        READING_LIST -> MR.strings.reading_list
-        WISH_LIST -> MR.strings.wish_list
-        COMPLETE_LIST -> MR.strings.complete_list
-        ON_HOLD_LIST -> MR.strings.on_hold_list
-        UNFINISHED_LIST -> MR.strings.unfinished_list
+        READING -> MR.strings.reading_list
+        PLANNED -> MR.strings.wish_list
+        COMPLETED -> MR.strings.complete_list
+        ON_HOLD -> MR.strings.on_hold_list
+        DROPPED -> MR.strings.unfinished_list
         else -> null
     }
 
-    override fun getReadingStatus(): Long = READING_LIST
+    override fun getReadingStatus(): Long = READING
 
     override fun getRereadingStatus(): Long = -1
 
-    override fun getCompletionStatus(): Long = COMPLETE_LIST
+    override fun getCompletionStatus(): Long = COMPLETED
 
     override fun getScoreList(): ImmutableList<String> = SCORE_LIST
 
@@ -72,8 +74,8 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
     override fun displayScore(track: DomainTrack): String = track.score.toString()
 
     override suspend fun update(track: Track, didReadChapter: Boolean): Track {
-        if (track.status != COMPLETE_LIST && didReadChapter) {
-            track.status = READING_LIST
+        if (track.status != COMPLETED && didReadChapter) {
+            track.status = READING
         }
         api.updateSeriesListItem(track)
         return track
@@ -113,8 +115,8 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
 
     override suspend fun login(username: String, password: String) {
         val authenticated = api.authenticate(password) ?: throw Throwable("Unable to login")
-        saveCredentials(authenticated.uid.toString(), authenticated.sessionToken)
-        interceptor.newAuth(authenticated.sessionToken)
+        saveCredentials(authenticated.username.toString(), password)
+        interceptor.newAuth(password)
     }
 
     fun restoreSession(): String? {

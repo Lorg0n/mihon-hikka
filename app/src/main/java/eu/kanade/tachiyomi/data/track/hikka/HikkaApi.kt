@@ -1,35 +1,33 @@
 package eu.kanade.tachiyomi.data.track.hikka
 
 import eu.kanade.tachiyomi.data.database.models.Track
-import eu.kanade.tachiyomi.data.track.mangaupdates.MangaUpdates.Companion.READING_LIST
-import eu.kanade.tachiyomi.data.track.mangaupdates.MangaUpdates.Companion.WISH_LIST
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.Context
+import eu.kanade.tachiyomi.data.track.hikka.dto.Context
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.ListItem
 import eu.kanade.tachiyomi.data.track.mangaupdates.dto.Rating
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.Record
-import eu.kanade.tachiyomi.network.DELETE
-import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.POST
-import eu.kanade.tachiyomi.network.PUT
+import eu.kanade.tachiyomi.data.track.hikka.dto.Record
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.parseAs
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import logcat.LogPriority
+import logcat.logcat
+import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import tachiyomi.core.common.util.system.logcat
 import uy.kohesive.injekt.injectLazy
+import java.util.UUID
 import tachiyomi.domain.track.model.Track as DomainTrack
 
 class HikkaApi(
@@ -38,174 +36,209 @@ class HikkaApi(
 ) {
     private val json: Json by injectLazy()
 
-    private val baseUrl = "https://api.mangaupdates.com"
-    private val contentType = "application/vnd.api+json".toMediaType()
+    private val baseUrl = "https://api.hikka.io"
+    private val contentType = "application/json".toMediaTypeOrNull()
 
-    private val authClient by lazy {
-        client.newBuilder()
-            .addInterceptor(interceptor)
-            .build()
-    }
+    private var authCode = ""
 
     suspend fun getSeriesListItem(track: Track): Pair<ListItem, Rating?> {
+        val args = track.tracking_url.split("/")
+        val slug = args.last()
+
+        val rating = getSeriesRating(track)
+        logcat.logcat("MSG", LogPriority.ERROR, {rating?.rating.toString()})
+
+        val request = Request.Builder()
+            .url("$baseUrl/manga/${slug}")
+            .get()
+            .addHeader("accept", "application/json")
+            .addHeader("Content-Type", "application/json")
+            .build()
+
         val listItem = with(json) {
-            authClient.newCall(GET("$baseUrl/v1/lists/series/${track.remote_id}"))
+            client.newCall(request)
                 .awaitSuccess()
                 .parseAs<ListItem>()
         }
 
-        val rating = getSeriesRating(track)
-
+        //val rating = getSeriesRating(track)
+        //logcat.logcat("MSG", LogPriority.ERROR, {rating?.rating.toString()})
         return listItem to rating
     }
 
     suspend fun addSeriesToList(track: Track, hasReadChapters: Boolean) {
-        val status = if (hasReadChapters) READING_LIST else WISH_LIST
-        val body = buildJsonArray {
-            addJsonObject {
-                putJsonObject("series") {
-                    put("id", track.remote_id)
-                }
-                put("list_id", status)
-            }
-        }
-        authClient.newCall(
-            POST(
-                url = "$baseUrl/v1/lists/series",
-                body = body.toString().toRequestBody(contentType),
-            ),
-        )
-            .awaitSuccess()
-            .let {
-                if (it.code == 200) {
-                    track.status = status
-                    track.last_chapter_read = 1.0
-                }
-            }
+//        val status = if (hasReadChapters) READING_LIST else WISH_LIST
+//        val body = buildJsonArray {
+//            addJsonObject {
+//                putJsonObject("series") {
+//                    put("id", track.remote_id)
+//                }
+//                put("list_id", status)
+//            }
+//        }
+//        authCode.newCall(
+//            POST(
+//                url = "$baseUrl/v1/lists/series",
+//                body = body.toString().toRequestBody(contentType),
+//            ),
+//        )
+//            .awaitSuccess()
+//            .let {
+//                if (it.code == 200) {
+//                    track.status = status
+//                    track.last_chapter_read = 1.0
+//                }
+//            }
     }
 
     suspend fun updateSeriesListItem(track: Track) {
-        val body = buildJsonArray {
-            addJsonObject {
-                putJsonObject("series") {
-                    put("id", track.remote_id)
-                }
-                put("list_id", track.status)
-                putJsonObject("status") {
-                    put("chapter", track.last_chapter_read.toInt())
-                }
-            }
-        }
-        authClient.newCall(
-            POST(
-                url = "$baseUrl/v1/lists/series/update",
-                body = body.toString().toRequestBody(contentType),
-            ),
-        )
-            .awaitSuccess()
-
-        updateSeriesRating(track)
+//        val body = buildJsonArray {
+//            addJsonObject {
+//                putJsonObject("series") {
+//                    put("id", track.remote_id)
+//                }
+//                put("list_id", track.status)
+//                putJsonObject("status") {
+//                    put("chapter", track.last_chapter_read.toInt())
+//                }
+//            }
+//        }
+//        authCode.newCall(
+//            POST(
+//                url = "$baseUrl/v1/lists/series/update",
+//                body = body.toString().toRequestBody(contentType),
+//            ),
+//        )
+//            .awaitSuccess()
+//
+//        updateSeriesRating(track)
     }
 
     suspend fun deleteSeriesFromList(track: DomainTrack) {
-        val body = buildJsonArray {
-            add(track.remoteId)
-        }
-        authClient.newCall(
-            POST(
-                url = "$baseUrl/v1/lists/series/delete",
-                body = body.toString().toRequestBody(contentType),
-            ),
-        )
-            .awaitSuccess()
+//        val body = buildJsonArray {
+//            add(track.remoteId)
+//        }
+//        authCode.newCall(
+//            POST(
+//                url = "$baseUrl/v1/lists/series/delete",
+//                body = body.toString().toRequestBody(contentType),
+//            ),
+//        )
+//            .awaitSuccess()
+
+        val args = track.remoteUrl.split("/")
+        val mangaSlug = args.last()
+
+        val request = Request.Builder()
+            .url("$baseUrl/read/manga/${mangaSlug}")
+            .delete()
+            .addHeader("accept", "application/json")
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        // client.newCall(request).awaitSuccess()
     }
 
     private suspend fun getSeriesRating(track: Track): Rating? {
-        return try {
-            with(json) {
-                authClient.newCall(GET("$baseUrl/v1/series/${track.remote_id}/rating"))
-                    .awaitSuccess()
-                    .parseAs<Rating>()
-            }
-        } catch (e: Exception) {
-            null
+        val args = track.tracking_url.split("/")
+        val slug = args.last()
+
+        val request = Request.Builder()
+            .url("$baseUrl/read/manga/${slug}")
+            .get()
+            .addHeader("Cookie", "auth=$authCode")
+            .addHeader("auth", authCode)
+            .build()
+
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            return null
+        }
+
+        val responseBody = response.body.string()
+        return responseBody.let {
+            val jsonElement = json.parseToJsonElement(it)
+            Rating(jsonElement.jsonObject["score"].toString().toDouble())
         }
     }
 
     private suspend fun updateSeriesRating(track: Track) {
-        if (track.score < 0.0) return
-        if (track.score != 0.0) {
-            val body = buildJsonObject {
-                put("rating", track.score)
-            }
-            authClient.newCall(
-                PUT(
-                    url = "$baseUrl/v1/series/${track.remote_id}/rating",
-                    body = body.toString().toRequestBody(contentType),
-                ),
-            )
-                .awaitSuccess()
-        } else {
-            authClient.newCall(
-                DELETE(
-                    url = "$baseUrl/v1/series/${track.remote_id}/rating",
-                ),
-            )
-                .awaitSuccess()
+//        val body = buildJsonObject {
+//            put("rating", track.score)
+//        }
+//        authCode.newCall(
+//            PUT(
+//                url = "$baseUrl/v1/series/${track.remote_id}/rating",
+//                body = body.toString().toRequestBody(contentType),
+//            ),
+//        )
+//            .awaitSuccess()
+        val body = buildJsonObject {
+            put("score", track.score)
         }
+        val args = track.tracking_url.split("/")
+        val mangaSlug = args.last()
+
+        val request = Request.Builder()
+            .url("$baseUrl/read/manga/${mangaSlug}")
+            .put(body.toString().toRequestBody(contentType))
+            .addHeader("accept", "application/json")
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        client.newCall(request).awaitSuccess()
     }
 
     suspend fun search(query: String): List<Record> {
         val body = buildJsonObject {
-            put("search", query)
+            put("query", query)
             put(
-                "filter_types",
+                "sort",
                 buildJsonArray {
-                    add("drama cd")
-                    add("novel")
-                },
-            )
-        }
-        return with(json) {
-            client.newCall(
-                POST(
-                    url = "$baseUrl/v1/series/search",
-                    body = body.toString().toRequestBody(contentType),
-                ),
-            )
-                .awaitSuccess()
-                .parseAs<JsonObject>()
-                .let { obj ->
-                    obj["results"]?.jsonArray?.map { element ->
-                        json.decodeFromJsonElement<Record>(element.jsonObject["record"]!!)
-                    }
+                    add("score:desc")
+                    add("scored_by:desc")
                 }
-                .orEmpty()
+            )
         }
+
+        val request = Request.Builder()
+            .url("$baseUrl/manga?page=1&size=15")
+            .post(Json.encodeToString(body).toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .addHeader("accept", "application/json")
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        val response = client.newCall(request).awaitSuccess()
+        val json = Json { ignoreUnknownKeys = true }
+
+        return json.decodeFromString<JsonObject>(response.body!!.string())
+            .get("list")!!
+            .jsonArray
+            .map { json.decodeFromJsonElement<Record>(it) }
     }
 
     suspend fun authenticate(auth: String): Context? {
-        val body = buildJsonObject {
-            put("username", "")
-            put("password", "")
-        }
+        val headers = Headers.Builder()
+            .add("Cookie", "auth=$auth")
+            .add("auth", auth)
+            .build()
+
+        val request = Request.Builder()
+            .url("$baseUrl/user/me")
+            .get()
+            .headers(headers)
+            .build()
+
         return with(json) {
-            client.newCall(
-                PUT(
-                    url = "$baseUrl/v1/account/login",
-                    body = body.toString().toRequestBody(contentType),
-                ),
-            )
-                .awaitSuccess()
-                .parseAs<JsonObject>()
-                .let { obj ->
-                    try {
-                        json.decodeFromJsonElement<Context>(obj["context"]!!)
-                    } catch (e: Exception) {
-                        logcat(LogPriority.ERROR, e)
-                        null
-                    }
+            client.newCall(request).awaitSuccess().parseAs<Context>().let { context ->
+                try {
+                    authCode = auth
+                    context
+                } catch (e: Exception) {
+                    logcat(LogPriority.ERROR, e)
+                    null
                 }
+            }
         }
     }
 }
