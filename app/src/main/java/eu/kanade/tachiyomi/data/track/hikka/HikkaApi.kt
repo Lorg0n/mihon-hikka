@@ -46,7 +46,7 @@ class HikkaApi(
         val slug = args.last()
 
         val rating = getSeriesRating(track)
-        logcat.logcat("MSG", LogPriority.ERROR, {rating?.rating.toString()})
+        logcat.logcat("MSG", LogPriority.ERROR, {"Score: " + rating?.rating.toString()})
 
         val request = Request.Builder()
             .url("$baseUrl/manga/${slug}")
@@ -143,6 +143,8 @@ class HikkaApi(
         val args = track.tracking_url.split("/")
         val slug = args.last()
 
+        logcat.logcat("TEST", LogPriority.WARN, {"$baseUrl/read/manga/${slug}"})
+
         val request = Request.Builder()
             .url("$baseUrl/read/manga/${slug}")
             .get()
@@ -155,8 +157,8 @@ class HikkaApi(
             return null
         }
 
-        val responseBody = response.body.string()
-        return responseBody.let {
+        val responseBody = response.body?.string()
+        return responseBody?.let {
             val jsonElement = json.parseToJsonElement(it)
             Rating(jsonElement.jsonObject["score"].toString().toDouble())
         }
@@ -233,6 +235,7 @@ class HikkaApi(
             client.newCall(request).awaitSuccess().parseAs<Context>().let { context ->
                 try {
                     authCode = auth
+                    logcat.logcat("TEST", LogPriority.INFO, {"Auth Code: " + authCode + " / auth: " + auth})
                     context
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR, e)
