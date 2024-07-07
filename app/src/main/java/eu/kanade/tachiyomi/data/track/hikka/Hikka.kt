@@ -5,59 +5,45 @@ import dev.icerock.moko.resources.StringResource
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.database.models.Track
 import eu.kanade.tachiyomi.data.track.BaseTracker
-import eu.kanade.tachiyomi.data.track.DeletableTracker
-import eu.kanade.tachiyomi.data.track.hikka.dto.toTrackSearch
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.ListItem
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.Rating
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.copyTo
-import eu.kanade.tachiyomi.data.track.mangaupdates.dto.toTrackSearch
+import eu.kanade.tachiyomi.data.track.EnhancedTracker
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
+import eu.kanade.tachiyomi.source.ConfigurableSource
+import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.sourcePreferences
 import kotlinx.collections.immutable.ImmutableList
-import kotlinx.collections.immutable.toImmutableList
-import kotlinx.serialization.SerialName
+import kotlinx.collections.immutable.persistentListOf
+import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
+import uy.kohesive.injekt.injectLazy
+import java.security.MessageDigest
 import tachiyomi.domain.track.model.Track as DomainTrack
 
-class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
+class Hikka(id: Long) : BaseTracker(id, "Hikka"), EnhancedTracker {
 
     companion object {
-        const val READING = 0L // Список для читання
-        const val PLANNED = 1L // Список бажань
-        const val COMPLETED = 2L // Список завершених
-        const val DROPPED = 3L // Список незавершених
-        const val ON_HOLD = 4L // Список на паузі
-
-        private val SCORE_LIST = (0..10)
-            .flatMap { decimal ->
-                when (decimal) {
-                    0 -> listOf("-")
-                    10 -> listOf("10.0")
-                    else -> (0..9).map { fraction ->
-                        "$decimal.$fraction"
-                    }
-                }
-            }
-            .toImmutableList()
+        const val UNREAD = 1L
+        const val READING = 2L
+        const val COMPLETED = 3L
     }
 
-    private val interceptor by lazy { HikkaInterceptor(this) }
+    var authCode: String? = null
 
-    private val api by lazy { HikkaApi(interceptor, client) }
+    private val interceptor by lazy { HikkaInterceptor(this) }
+    val api by lazy { HikkaApi(client, interceptor) }
+
+    private val sourceManager: SourceManager by injectLazy()
 
     override fun getLogo(): Int = R.drawable.ic_tracker_hikka
 
-    override fun getLogoColor(): Int = Color.rgb(0, 0, 0)
+    override fun getLogoColor() = Color.rgb(74, 198, 148)
 
-    override fun getStatusList(): List<Long> {
-        return listOf(READING, COMPLETED, ON_HOLD, DROPPED, PLANNED)
-    }
+    override fun getStatusList(): List<Long> = listOf(UNREAD, READING, COMPLETED)
 
     override fun getStatus(status: Long): StringResource? = when (status) {
-        READING -> MR.strings.reading_list
-        PLANNED -> MR.strings.wish_list
-        COMPLETED -> MR.strings.complete_list
-        ON_HOLD -> MR.strings.on_hold_list
-        DROPPED -> MR.strings.unfinished_list
+        UNREAD -> MR.strings.unread
+        READING -> MR.strings.reading
+        COMPLETED -> MR.strings.completed
         else -> null
     }
 
@@ -67,59 +53,96 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
 
     override fun getCompletionStatus(): Long = COMPLETED
 
-    override fun getScoreList(): ImmutableList<String> = SCORE_LIST
+    override fun getScoreList(): ImmutableList<String> = persistentListOf()
 
-    override fun indexToScore(index: Int): Double = if (index == 0) 0.0 else SCORE_LIST[index].toDouble()
-
-    override fun displayScore(track: DomainTrack): String = track.score.toString()
+    override fun displayScore(track: DomainTrack): String = ""
 
     override suspend fun update(track: Track, didReadChapter: Boolean): Track {
-        if (track.status != COMPLETED && didReadChapter) {
-            track.status = READING
+        if (track.status != COMPLETED) {
+            if (didReadChapter) {
+                if (track.last_chapter_read.toLong() == track.total_chapters && track.total_chapters > 0) {
+                    track.status = COMPLETED
+                } else {
+                    track.status = READING
+                }
+            }
         }
-        api.updateSeriesListItem(track)
-        return track
-    }
-
-    override suspend fun delete(track: DomainTrack) {
-        api.deleteSeriesFromList(track)
+        return api.updateProgress(track)
     }
 
     override suspend fun bind(track: Track, hasReadChapters: Boolean): Track {
-        return try {
-            val (series, rating) = api.getSeriesListItem(track)
-            track.copyFrom(series, rating)
-        } catch (e: Exception) {
-            track.score = 0.0
-            api.addSeriesToList(track, hasReadChapters)
-            track
-        }
+        return track
     }
 
     override suspend fun search(query: String): List<TrackSearch> {
-        return api.search(query)
-            .map {
-                it.toTrackSearch(id)
-            }
+        TODO("Not yet implemented: search")
     }
 
     override suspend fun refresh(track: Track): Track {
-        val (series, rating) = api.getSeriesListItem(track)
-        return track.copyFrom(series, rating)
-    }
-
-    private fun Track.copyFrom(item: ListItem, rating: Rating?): Track = apply {
-        item.copyTo(this)
-        score = rating?.rating ?: 0.0
+        val remoteTrack = api.getTrackSearch(track.tracking_url)
+        track.copyPersonalFrom(remoteTrack)
+        track.total_chapters = remoteTrack.total_chapters
+        return track
     }
 
     override suspend fun login(username: String, password: String) {
-        val authenticated = api.authenticate(password) ?: throw Throwable("Unable to login")
-        saveCredentials(authenticated.username.toString(), password)
-        interceptor.newAuth(password)
+
+        saveCredentials("user", "pass")
     }
 
-    fun restoreSession(): String? {
-        return trackPreferences.trackPassword(this).get().ifBlank { null }
+    // [Tracker].isLogged works by checking that credentials are saved.
+    // By saving dummy, unused credentials, we can activate the tracker simply by login/logout
+    override fun loginNoop() {
+        saveCredentials("user", "pass")
+    }
+
+    override fun getAcceptedSources() = listOf("eu.kanade.tachiyomi.extension.all.kavita.Kavita")
+
+    override suspend fun match(manga: Manga): TrackSearch? =
+        try {
+            api.getTrackSearch(manga.url)
+        } catch (e: Exception) {
+            null
+        }
+
+    override fun isTrackFrom(track: DomainTrack, manga: Manga, source: Source?): Boolean =
+        track.remoteUrl == manga.url && source?.let { accept(it) } == true
+
+    override fun migrateTrack(track: DomainTrack, manga: Manga, newSource: Source): DomainTrack? =
+        if (accept(newSource)) {
+            track.copy(remoteUrl = manga.url)
+        } else {
+            null
+        }
+
+    fun loadOAuth() {
+        val oauth = authCode
+        for (id in 1..3) {
+            val authentication = oauth.authentications[id - 1]
+            val sourceId by lazy {
+                val key = "kavita_$id/all/1" // Hardcoded versionID to 1
+                val bytes = MessageDigest.getInstance("MD5").digest(key.toByteArray())
+                (0..7).map { bytes[it].toLong() and 0xff shl 8 * (7 - it) }
+                    .reduce(Long::or) and Long.MAX_VALUE
+            }
+            val preferences = (sourceManager.get(sourceId) as ConfigurableSource).sourcePreferences()
+
+            val prefApiUrl = preferences.getString("APIURL", "")
+            val prefApiKey = preferences.getString("APIKEY", "")
+            if (prefApiUrl.isNullOrEmpty() || prefApiKey.isNullOrEmpty()) {
+                // Source not configured. Skip
+                continue
+            }
+
+            val token = api.getNewToken(apiUrl = prefApiUrl, apiKey = prefApiKey)
+            if (token.isNullOrEmpty()) {
+                // Source is not accessible. Skip
+                continue
+            }
+
+            authentication.apiUrl = prefApiUrl
+            authentication.jwtToken = token.toString()
+        }
+        authCode = oauth
     }
 }
