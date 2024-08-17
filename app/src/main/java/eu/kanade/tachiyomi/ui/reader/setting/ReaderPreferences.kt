@@ -13,6 +13,12 @@ class ReaderPreferences(
 
     // region General
 
+    fun autoScrollLoaded() = preferenceStore.getBoolean("autoscroll_until_loaded", true)
+
+    fun autoScrollSpeed() = preferenceStore.getInt("autoscroll_speed", 300)
+
+    fun autoScrollRepeat() = preferenceStore.getBoolean("autoscroll_repeat", true)
+
     fun pageTransitions() = preferenceStore.getBoolean("pref_enable_transitions_key", true)
 
     fun flashOnPageChange() = preferenceStore.getBoolean("pref_reader_flash", false)

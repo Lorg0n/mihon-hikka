@@ -56,6 +56,8 @@ internal fun ColumnScope.ReadingModePage(screenModel: ReaderSettingsScreenModel)
     } else {
         PagerViewerSettings(screenModel)
     }
+    
+    AutoScrollSettings(screenModel = screenModel)
 }
 
 @Composable
@@ -231,4 +233,33 @@ private fun ColumnScope.TapZonesItems(
             }
         }
     }
+}
+
+@Composable
+private fun AutoScrollSettings(screenModel: ReaderSettingsScreenModel) {
+    HeadingItem("Auto Scroll")
+
+    val autoScrollSpeed by screenModel.preferences.autoScrollSpeed().collectAsState()
+    val numberFormat = remember { NumberFormat.getIntegerInstance() }
+
+    SliderItem(
+        label = "Speed",
+        min = 100,
+        max = 800,
+        value = autoScrollSpeed,
+        valueText = numberFormat.format(autoScrollSpeed),
+        onChange = {
+            screenModel.preferences.autoScrollSpeed().set(it)
+        },
+    )
+
+    CheckboxItem(
+        label = "After the last page, the first page will automatically turn on",
+        pref = screenModel.preferences.autoScrollRepeat(),
+    )
+
+    CheckboxItem(
+        label = "Wait until the next page loads",
+        pref = screenModel.preferences.autoScrollLoaded(),
+    )
 }

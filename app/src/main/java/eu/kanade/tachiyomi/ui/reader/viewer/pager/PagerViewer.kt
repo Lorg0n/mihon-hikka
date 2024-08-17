@@ -90,7 +90,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         pager.addOnPageChangeListener(
             object : ViewPager.SimpleOnPageChangeListener() {
                 override fun onPageSelected(position: Int) {
-                    if (!activity.isScrollingThroughPages) {
+                    if (!activity.isScrollingThroughPages && !activity.viewModel.state.value.autoScrollState) {
                         activity.hideMenu()
                     }
                     onPageChange(position)
@@ -160,14 +160,6 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      */
     override fun getView(): View {
         return pager
-    }
-
-    fun moveToPage(page: ReaderPage, smooth: Boolean) {
-        val position = adapter.items.indexOf(page)
-        if (position != -1) {
-            pager.setCurrentItem(position, smooth)
-            activity.onPageSelected(page)
-        }
     }
 
     /**

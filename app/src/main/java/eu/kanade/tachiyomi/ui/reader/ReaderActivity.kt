@@ -12,9 +12,6 @@ import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -39,9 +36,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.viewModelScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import coil3.util.Logger
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import com.google.android.material.elevation.SurfaceColors
 import com.google.android.material.transition.platform.MaterialContainerTransform
@@ -62,6 +56,7 @@ import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.databinding.ReaderActivityBinding
+import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.ui.main.MainActivity
@@ -69,6 +64,7 @@ import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.AddToLibra
 import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.Error
 import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.Success
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
+import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter.State
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
@@ -146,7 +142,6 @@ class ReaderActivity : BaseActivity() {
 
     private var loadingIndicator: ReaderProgressIndicator? = null
 
-    private var isAutoScrolling = false;
     private var autoScrollJob: Job? = null
 
     var isScrollingThroughPages = false
@@ -527,11 +522,48 @@ class ReaderActivity : BaseActivity() {
         autoScrollJob = lifecycleScope.launch {
             while (isActive) {
                 viewModel.state.value.viewer?.let { viewer ->
-                    when (viewer) {
-                        // is PagerViewer -> viewer.moveToNext()
-                        is WebtoonViewer -> viewer.scrollDown(100)
+                    val currentChapter = viewModel.state.value.currentChapter
+
+                    val nextChapter = viewModel.state.value.viewerChapters?.nextChapter
+                    val nextPage = currentChapter?.pages?.getOrNull(viewModel.state.value.currentPage + 1)
+
+                    if (readerPreferences.autoScrollRepeat().get() && nextChapter == null && nextPage == null) {
+                        loadFirstChapter()
+                        delay(500)
                     }
-                    delay(90)
+
+                    while (nextPage?.status == Page.State.QUEUE) {
+                        delay(100)
+                    }
+//
+//                    val isNextPageLoaded =
+//                        currentChapter?.pages?.getOrNull(viewModel.state.value.currentPage + 1)?.status == Page.State.READY
+//                            || viewModel.state.value.viewerChapters?.nextChapter?.pages?.getOrNull(0)?.status == Page.State.READY;
+//
+//
+//                    while (readerPreferences.autoScrollLoaded().get() && (!isNextPageLoaded && viewModel.chapterList.indexOf(currentChapter) != viewModel.chapterList.lastIndex))
+//                    {
+//                        viewModel.state.value.viewerChapters?.nextChapter?.requestedPage
+//                        System.out.logcat {
+//                            "\nNEXT PAGE STATUS:" + currentChapter?.pages?.getOrNull(viewModel.state.value.currentPage + 1)?.status?.name +
+//                            "\nNEXT FIRST PAGE STATUS:" + viewModel.state.value.viewerChapters?.nextChapter?.pages?.getOrNull(0)?.status?.name +
+//                            "\nNEXT CHAPTER STATE: " + viewModel.state.value.viewerChapters?.nextChapter?.state
+//                        }
+//                        delay(100)
+//                    }
+
+                    when (viewer) {
+                        is PagerViewer -> {
+                            val delayTime: Long = (800 / readerPreferences.autoScrollSpeed().get().toLong()) * 500
+
+                            viewer.moveToNext()
+                            delay(delayTime)
+                        }
+                        is WebtoonViewer -> {
+                            viewer.scrollDown(readerPreferences.autoScrollSpeed().get())
+                            delay(10)
+                        }
+                    }
                 }
             }
         }
@@ -687,6 +719,13 @@ class ReaderActivity : BaseActivity() {
      * Tells the presenter to load the next chapter and mark it as active. The progress dialog
      * should be automatically shown.
      */
+    private fun loadFirstChapter() {
+        lifecycleScope.launch {
+            viewModel.loadFirstChapter()
+            moveToPageIndex(0)
+        }
+    }
+
     private fun loadNextChapter() {
         lifecycleScope.launch {
             viewModel.loadNextChapter()
@@ -701,6 +740,7 @@ class ReaderActivity : BaseActivity() {
     private fun loadPreviousChapter() {
         lifecycleScope.launch {
             viewModel.loadPreviousChapter()
+            viewModel.getChapterUrl()
             moveToPageIndex(0)
         }
     }
@@ -994,74 +1034,5 @@ class ReaderActivity : BaseActivity() {
             val paint = if (grayscale || invertedColors) getCombinedPaint(grayscale, invertedColors) else null
             binding.viewerContainer.setLayerType(LAYER_TYPE_HARDWARE, paint)
         }
-    }
-
-    enum class ScrollDirection {
-        UP, DOWN
-    }
-
-    suspend fun simulateSmoothScroll(view: View, direction: ScrollDirection, distance: Float, duration: Long = 6000, stepCount: Int = 60) {
-        val downTime = System.currentTimeMillis()
-
-        val startX = view.width / 2f
-        val startY = when (direction) {
-            ScrollDirection.UP -> view.height - 1f
-            ScrollDirection.DOWN -> 1f
-        }
-
-        val endY = when (direction) {
-            ScrollDirection.UP -> 1f
-            ScrollDirection.DOWN -> view.height - 1f
-        }
-
-        val endX = startX
-
-        val deltaX = (endX - startX) / stepCount
-        val deltaY = (endY - startY) / stepCount
-
-        val downEvent = MotionEvent.obtain(
-            downTime,
-            downTime,
-            MotionEvent.ACTION_DOWN,
-            startX,
-            startY,
-            0
-        )
-
-        withContext(Dispatchers.Main) {
-            view.dispatchTouchEvent(downEvent)
-        }
-
-        for (i in 1..stepCount) {
-            val moveEvent = MotionEvent.obtain(
-                downTime,
-                downTime + i * (duration / stepCount),
-                MotionEvent.ACTION_MOVE,
-                startX + deltaX * i,
-                startY + deltaY * i,
-                0
-            )
-
-            delay(duration / stepCount)
-            withContext(Dispatchers.Main) {
-                view.dispatchTouchEvent(moveEvent)
-            }
-            moveEvent.recycle()
-        }
-
-        val upEvent = MotionEvent.obtain(
-            downTime,
-            downTime + duration,
-            MotionEvent.ACTION_UP,
-            endX,
-            endY,
-            0
-        )
-
-        withContext(Dispatchers.Main) {
-            view.dispatchTouchEvent(upEvent)
-        }
-        upEvent.recycle()
-        downEvent.recycle()
     }
 }
