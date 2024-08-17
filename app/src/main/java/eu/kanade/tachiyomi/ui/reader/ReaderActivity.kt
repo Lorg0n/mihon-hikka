@@ -532,7 +532,7 @@ class ReaderActivity : BaseActivity() {
                         delay(500)
                     }
 
-                    while (nextPage?.status == Page.State.QUEUE) {
+                    while (readerPreferences.autoScrollLoaded().get() && nextPage?.status == Page.State.QUEUE) {
                         delay(100)
                     }
 //
