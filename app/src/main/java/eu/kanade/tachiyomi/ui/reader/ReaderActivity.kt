@@ -12,8 +12,12 @@ import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
 import android.view.View.LAYER_TYPE_HARDWARE
 import android.view.WindowManager
 import android.widget.Toast
@@ -35,6 +39,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import coil3.util.Logger
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import com.google.android.material.elevation.SurfaceColors
 import com.google.android.material.transition.platform.MaterialContainerTransform
@@ -69,12 +76,17 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsScreenModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
+import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerViewer
+import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonViewer
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
 import eu.kanade.tachiyomi.util.system.hasDisplayCutout
 import eu.kanade.tachiyomi.util.system.isNightMode
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toast
 import eu.kanade.tachiyomi.util.view.setComposeContent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
@@ -83,7 +95,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import tachiyomi.core.common.Constants
 import tachiyomi.core.common.i18n.stringResource
@@ -131,6 +145,9 @@ class ReaderActivity : BaseActivity() {
     private val windowInsetsController by lazy { WindowInsetsControllerCompat(window, binding.root) }
 
     private var loadingIndicator: ReaderProgressIndicator? = null
+
+    private var isAutoScrolling = false;
+    private var autoScrollJob: Job? = null
 
     var isScrollingThroughPages = false
         private set
@@ -364,6 +381,7 @@ class ReaderActivity : BaseActivity() {
 
             val cropBorderPaged by readerPreferences.cropBorders().collectAsState()
             val cropBorderWebtoon by readerPreferences.cropBordersWebtoon().collectAsState()
+
             val isPagerType = ReadingMode.isPagerType(viewModel.getMangaReadingMode())
             val cropEnabled = if (isPagerType) cropBorderPaged else cropBorderWebtoon
 
@@ -387,6 +405,7 @@ class ReaderActivity : BaseActivity() {
                 onShare = ::shareChapter.takeIf { isHttpSource },
 
                 viewer = state.viewer,
+
                 onNextChapter = ::loadNextChapter,
                 enabledNext = state.viewerChapters?.nextChapter != null,
                 onPreviousChapter = ::loadPreviousChapter,
@@ -413,6 +432,17 @@ class ReaderActivity : BaseActivity() {
                     menuToggleToast = toast(if (enabled) MR.strings.on else MR.strings.off)
                 },
                 onClickSettings = viewModel::openSettingsDialog,
+                autoScroll = state.autoScrollState,
+                onAutoScroll = {
+                    setAutoScroll(!viewModel.state.value.autoScrollState)
+
+                    if (viewModel.state.value.autoScrollState) {
+                        startAutoScroll()
+                    } else {
+                        stopAutoScroll()
+                    }
+
+                }
             )
 
             if (flashOnPageChange) {
@@ -491,6 +521,25 @@ class ReaderActivity : BaseActivity() {
 
         // Set initial visibility
         setMenuVisibility(viewModel.state.value.menuVisible)
+    }
+
+    private fun startAutoScroll() {
+        autoScrollJob = lifecycleScope.launch {
+            while (isActive) {
+                viewModel.state.value.viewer?.let { viewer ->
+                    when (viewer) {
+                        // is PagerViewer -> viewer.moveToNext()
+                        is WebtoonViewer -> viewer.scrollDown(100)
+                    }
+                    delay(90)
+                }
+            }
+        }
+    }
+
+    private fun stopAutoScroll() {
+        autoScrollJob?.cancel()
+        autoScrollJob = null
     }
 
     /**
@@ -704,6 +753,10 @@ class ReaderActivity : BaseActivity() {
         if (viewModel.state.value.menuVisible) {
             setMenuVisibility(false)
         }
+    }
+
+    fun setAutoScroll(state: Boolean) {
+        viewModel.setAutoScrollState(state)
     }
 
     /**
@@ -941,5 +994,74 @@ class ReaderActivity : BaseActivity() {
             val paint = if (grayscale || invertedColors) getCombinedPaint(grayscale, invertedColors) else null
             binding.viewerContainer.setLayerType(LAYER_TYPE_HARDWARE, paint)
         }
+    }
+
+    enum class ScrollDirection {
+        UP, DOWN
+    }
+
+    suspend fun simulateSmoothScroll(view: View, direction: ScrollDirection, distance: Float, duration: Long = 6000, stepCount: Int = 60) {
+        val downTime = System.currentTimeMillis()
+
+        val startX = view.width / 2f
+        val startY = when (direction) {
+            ScrollDirection.UP -> view.height - 1f
+            ScrollDirection.DOWN -> 1f
+        }
+
+        val endY = when (direction) {
+            ScrollDirection.UP -> 1f
+            ScrollDirection.DOWN -> view.height - 1f
+        }
+
+        val endX = startX
+
+        val deltaX = (endX - startX) / stepCount
+        val deltaY = (endY - startY) / stepCount
+
+        val downEvent = MotionEvent.obtain(
+            downTime,
+            downTime,
+            MotionEvent.ACTION_DOWN,
+            startX,
+            startY,
+            0
+        )
+
+        withContext(Dispatchers.Main) {
+            view.dispatchTouchEvent(downEvent)
+        }
+
+        for (i in 1..stepCount) {
+            val moveEvent = MotionEvent.obtain(
+                downTime,
+                downTime + i * (duration / stepCount),
+                MotionEvent.ACTION_MOVE,
+                startX + deltaX * i,
+                startY + deltaY * i,
+                0
+            )
+
+            delay(duration / stepCount)
+            withContext(Dispatchers.Main) {
+                view.dispatchTouchEvent(moveEvent)
+            }
+            moveEvent.recycle()
+        }
+
+        val upEvent = MotionEvent.obtain(
+            downTime,
+            downTime + duration,
+            MotionEvent.ACTION_UP,
+            endX,
+            endY,
+            0
+        )
+
+        withContext(Dispatchers.Main) {
+            view.dispatchTouchEvent(upEvent)
+        }
+        upEvent.recycle()
+        downEvent.recycle()
     }
 }

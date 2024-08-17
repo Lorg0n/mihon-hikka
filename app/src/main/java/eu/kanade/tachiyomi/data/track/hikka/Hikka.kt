@@ -117,32 +117,6 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), EnhancedTracker {
 
     fun loadOAuth() {
         val oauth = authCode
-        for (id in 1..3) {
-            val authentication = oauth.authentications[id - 1]
-            val sourceId by lazy {
-                val key = "kavita_$id/all/1" // Hardcoded versionID to 1
-                val bytes = MessageDigest.getInstance("MD5").digest(key.toByteArray())
-                (0..7).map { bytes[it].toLong() and 0xff shl 8 * (7 - it) }
-                    .reduce(Long::or) and Long.MAX_VALUE
-            }
-            val preferences = (sourceManager.get(sourceId) as ConfigurableSource).sourcePreferences()
-
-            val prefApiUrl = preferences.getString("APIURL", "")
-            val prefApiKey = preferences.getString("APIKEY", "")
-            if (prefApiUrl.isNullOrEmpty() || prefApiKey.isNullOrEmpty()) {
-                // Source not configured. Skip
-                continue
-            }
-
-            val token = api.getNewToken(apiUrl = prefApiUrl, apiKey = prefApiKey)
-            if (token.isNullOrEmpty()) {
-                // Source is not accessible. Skip
-                continue
-            }
-
-            authentication.apiUrl = prefApiUrl
-            authentication.jwtToken = token.toString()
-        }
         authCode = oauth
     }
 }

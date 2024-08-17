@@ -162,6 +162,14 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         return pager
     }
 
+    fun moveToPage(page: ReaderPage, smooth: Boolean) {
+        val position = adapter.items.indexOf(page)
+        if (position != -1) {
+            pager.setCurrentItem(position, smooth)
+            activity.onPageSelected(page)
+        }
+    }
+
     /**
      * Returns the PagerPageHolder for the provided page
      */
@@ -346,6 +354,8 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
             }
         }
     }
+
+
 
     /**
      * Moves to the page at the top (or previous).

@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.halilibo.richtext.ui.string.RichTextString
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.reader.components.ChapterNavigator
@@ -49,8 +50,11 @@ fun ReaderAppBars(
     onShare: (() -> Unit)?,
 
     viewer: Viewer?,
+
+    onAutoScroll: () -> Unit,
     onNextChapter: () -> Unit,
     enabledNext: Boolean,
+    autoScroll: Boolean,
     onPreviousChapter: () -> Unit,
     enabledPrevious: Boolean,
     currentPage: Int,
@@ -168,6 +172,8 @@ fun ReaderAppBars(
                     currentPage = currentPage,
                     totalPages = totalPages,
                     onSliderValueChange = onSliderValueChange,
+                    onAutoScroll = onAutoScroll,
+                    autoScroll = autoScroll,
                 )
 
                 BottomReaderBar(

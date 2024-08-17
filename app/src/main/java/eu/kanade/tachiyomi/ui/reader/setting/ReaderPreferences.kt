@@ -137,6 +137,7 @@ class ReaderPreferences(
 
     fun showNavigationOverlayOnStart() = preferenceStore.getBoolean("reader_navigation_overlay_on_start", false)
 
+
     // endregion
 
     enum class FlashColor {

@@ -8,19 +8,6 @@ class HikkaInterceptor(private val kavita: Hikka) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
-        if (kavita.authentications == null) {
-            kavita.loadOAuth()
-        }
-        val jwtToken = kavita.authentications?.getToken(
-            kavita.api.getApiFromUrl(originalRequest.url.toString()),
-        )
-
-        // Add the authorization header to the original request.
-        val authRequest = originalRequest.newBuilder()
-            .addHeader("Authorization", "Bearer $jwtToken")
-            .header("User-Agent", "Mihon v${BuildConfig.VERSION_NAME} (${BuildConfig.APPLICATION_ID})")
-            .build()
-
-        return chain.proceed(authRequest)
+        return chain.proceed(originalRequest);
     }
 }

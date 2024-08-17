@@ -1,5 +1,6 @@
 package eu.kanade.presentation.reader.components
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -10,8 +11,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -23,25 +27,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.util.isTabletUi
+import eu.kanade.tachiyomi.R
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.math.roundToInt
+import kotlin.reflect.KProperty
 
 @Composable
 fun ChapterNavigator(
     isRtl: Boolean,
+    onAutoScroll: () -> Unit,
     onNextChapter: () -> Unit,
     enabledNext: Boolean,
+    autoScroll: Boolean,
     onPreviousChapter: () -> Unit,
     enabledPrevious: Boolean,
     currentPage: Int,
@@ -70,6 +82,24 @@ fun ChapterNavigator(
                 .padding(horizontal = horizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            var icon by remember {
+                if (!autoScroll) mutableStateOf(Icons.Outlined.PlayArrow) else mutableStateOf(Icons.Outlined.Stop)
+            }
+
+            FilledIconButton(
+                enabled = true,
+                onClick = {
+                    icon = if (icon == Icons.Outlined.PlayArrow) Icons.Outlined.Stop else Icons.Outlined.PlayArrow
+                    onAutoScroll()
+                },
+                colors = buttonColor,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                )
+            }
+
             FilledIconButton(
                 enabled = if (isRtl) enabledNext else enabledPrevious,
                 onClick = if (isRtl) onNextChapter else onPreviousChapter,

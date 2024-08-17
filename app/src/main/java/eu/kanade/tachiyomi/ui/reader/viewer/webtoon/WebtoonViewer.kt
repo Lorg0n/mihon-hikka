@@ -9,6 +9,7 @@ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import androidx.core.app.ActivityCompat
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.WebtoonLayoutManager
 import eu.kanade.tachiyomi.data.download.DownloadManager
@@ -90,7 +91,7 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     onScrolled()
 
-                    if ((dy > threshold || dy < -threshold) && activity.viewModel.state.value.menuVisible) {
+                    if ((dy > threshold || dy < -threshold) && activity.viewModel.state.value.menuVisible && !activity.viewModel.state.value.autoScrollState) {
                         activity.hideMenu()
                     }
 
@@ -163,6 +164,23 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
 
         frame.layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         frame.addView(recycler)
+    }
+
+    suspend fun smoothScrollToNext(duration: Long) {
+        val recyclerView = recycler
+        val layoutManager = recyclerView.layoutManager as LinearLayoutManager
+        val lastVisibleItemPosition = layoutManager.findLastVisibleItemPosition()
+        val itemCount = layoutManager.itemCount
+
+        if (lastVisibleItemPosition < itemCount - 1) {
+            val nextPosition = lastVisibleItemPosition + 1
+            recyclerView.smoothScrollToPosition(nextPosition)
+            recyclerView.postDelayed({
+                activity.onPageSelected(activity.viewModel.state.value.currentChapter?.pages?.get(nextPosition) ?: return@postDelayed)
+            }, duration)
+        } else {
+            activity.viewModel.loadNextChapter()
+        }
     }
 
     private fun checkAllowPreload(page: ReaderPage?): Boolean {
@@ -292,11 +310,11 @@ class WebtoonViewer(val activity: ReaderActivity, val isContinuous: Boolean = tr
     /**
      * Scrolls down by [scrollDistance].
      */
-    private fun scrollDown() {
+    fun scrollDown(distance: Int = scrollDistance) {
         if (config.usePageTransitions) {
-            recycler.smoothScrollBy(0, scrollDistance)
+            recycler.smoothScrollBy(0, distance)
         } else {
-            recycler.scrollBy(0, scrollDistance)
+            recycler.scrollBy(0, distance)
         }
     }
 
