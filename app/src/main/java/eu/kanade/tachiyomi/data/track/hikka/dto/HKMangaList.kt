@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.track.hikka.dto
 
 import eu.kanade.tachiyomi.data.track.hikka.HikkaApi
+import eu.kanade.tachiyomi.data.track.hikka.stringToNumber
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import kotlinx.serialization.Serializable
 import java.util.UUID
@@ -30,7 +31,7 @@ data class HKManga(
 ) {
     fun toTrack(trackId: Long): TrackSearch {
         return TrackSearch.create(trackId).apply {
-            remote_id = UUID.nameUUIDFromBytes(this@HKManga.slug.toByteArray()).mostSignificantBits and Long.MAX_VALUE
+            remote_id = stringToNumber(this@HKManga.slug)
             title = this@HKManga.title_ua ?: this@HKManga.title_en ?: this@HKManga.title_original
             total_chapters = this@HKManga.chapters?.toLong() ?: 0
             cover_url = this@HKManga.image

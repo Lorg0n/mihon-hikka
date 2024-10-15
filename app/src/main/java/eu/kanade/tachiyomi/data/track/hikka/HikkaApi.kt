@@ -1,14 +1,21 @@
 package eu.kanade.tachiyomi.data.track.hikka
 
 import android.net.Uri
+import android.util.Log
 import androidx.core.net.toUri
+import eu.kanade.tachiyomi.data.database.models.Track
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKFullManga
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKManga
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKMangaList
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKOAuth
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKReadData
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKTokenInfo
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKUser
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
+import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
+import eu.kanade.tachiyomi.network.PUT
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.network.jsonMime
 import eu.kanade.tachiyomi.network.parseAs
@@ -29,7 +36,7 @@ class HikkaApi(
     private val client: OkHttpClient,
     interceptor: HikkaInterceptor,
 ) {
-    suspend fun getCurrentUser(): String {
+    suspend fun getCurrentUser(): HKUser {
         return withIOContext {
             val request = Request.Builder()
                 .url("${BASE_API_URL}/user/me")
@@ -39,7 +46,6 @@ class HikkaApi(
                 authClient.newCall(request)
                     .awaitSuccess()
                     .parseAs<HKUser>()
-                    .reference
             }
         }
     }
@@ -91,6 +97,67 @@ class HikkaApi(
             }
         }
     }
+
+    suspend fun getManga(track: Track): TrackSearch {
+        return withIOContext {
+            val slug = track.tracking_url.split("/")[4]
+
+            val url = "$BASE_API_URL/manga/${slug}".toUri().buildUpon()
+                .build()
+
+            Log.println(Log.WARN, "getManga", (track).toString())
+
+            with(json) {
+                authClient.newCall(GET(url.toString()))
+                    .awaitSuccess()
+                    .parseAs<HKFullManga>()
+                    .toTrack(trackId)
+            }
+        }
+    }
+
+    suspend fun deleteManga(track: tachiyomi.domain.track.model.Track) {
+        return withIOContext {
+            val slug = track.remoteUrl.split("/")[4]
+
+            val url = "$BASE_API_URL/read/manga/${slug}".toUri().buildUpon()
+                .build()
+
+            authClient.newCall(DELETE(url.toString()))
+                .awaitSuccess()
+        }
+    }
+
+    suspend fun addUserManga(track: Track): Track {
+        return withIOContext {
+            val slug = track.tracking_url.split("/")[4]
+
+            val url = "$BASE_API_URL/read/manga/${slug}".toUri().buildUpon()
+                .build()
+
+            Log.println(Log.WARN, "add manga", track.toApiStatus())
+
+            val payload = buildJsonObject {
+                put("note", "")
+                put("chapters", track.last_chapter_read.toInt())
+                put("volumes", 0)
+                put("rereads", 0)
+                put("score", track.score.toInt())
+                put("status", track.toApiStatus())
+            }
+
+            Log.println(Log.WARN, "add manga", payload.toString())
+
+            with(json) {
+                authClient.newCall(PUT(url.toString(), body=payload.toString().toRequestBody(jsonMime)))
+                    .awaitSuccess()
+                    .parseAs<HKReadData>()
+                    .toTrack(trackId)
+            }
+        }
+    }
+
+    suspend fun updateUserManga(track: Track): Track = addUserManga(track)
 
     private val json: Json by injectLazy()
     private val authClient = client.newBuilder().addInterceptor(interceptor).build()
