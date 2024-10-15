@@ -4,13 +4,12 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.net.toUri
 import eu.kanade.tachiyomi.data.database.models.Track
-import eu.kanade.tachiyomi.data.track.hikka.dto.HKFullManga
-import eu.kanade.tachiyomi.data.track.hikka.dto.HKManga
-import eu.kanade.tachiyomi.data.track.hikka.dto.HKMangaList
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKAuthTokenInfoResponse
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKMangaPaginationResponse
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKMangaResponse
 import eu.kanade.tachiyomi.data.track.hikka.dto.HKOAuth
-import eu.kanade.tachiyomi.data.track.hikka.dto.HKReadData
-import eu.kanade.tachiyomi.data.track.hikka.dto.HKTokenInfo
-import eu.kanade.tachiyomi.data.track.hikka.dto.HKUser
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKReadResponse
+import eu.kanade.tachiyomi.data.track.hikka.dto.HKUserResponse
 import eu.kanade.tachiyomi.data.track.model.TrackSearch
 import eu.kanade.tachiyomi.network.DELETE
 import eu.kanade.tachiyomi.network.GET
@@ -36,7 +35,7 @@ class HikkaApi(
     private val client: OkHttpClient,
     interceptor: HikkaInterceptor,
 ) {
-    suspend fun getCurrentUser(): HKUser {
+    suspend fun getCurrentUser(): HKUserResponse {
         return withIOContext {
             val request = Request.Builder()
                 .url("${BASE_API_URL}/user/me")
@@ -45,12 +44,12 @@ class HikkaApi(
             with(json) {
                 authClient.newCall(request)
                     .awaitSuccess()
-                    .parseAs<HKUser>()
+                    .parseAs<HKUserResponse>()
             }
         }
     }
 
-    suspend fun getTokenInfo(): HKTokenInfo {
+    suspend fun getTokenInfo(): HKAuthTokenInfoResponse {
         return withIOContext {
             val request = Request.Builder()
                 .url("${BASE_API_URL}/auth/token/info")
@@ -59,7 +58,7 @@ class HikkaApi(
             with(json) {
                 authClient.newCall(request)
                     .awaitSuccess()
-                    .parseAs<HKTokenInfo>()
+                    .parseAs<HKAuthTokenInfoResponse>()
             }
         }
     }
@@ -91,7 +90,7 @@ class HikkaApi(
             with(json) {
                 authClient.newCall(POST(url.toString(), body=payload.toString().toRequestBody(jsonMime)))
                     .awaitSuccess()
-                    .parseAs<HKMangaList>()
+                    .parseAs<HKMangaPaginationResponse>()
                     .list
                     .map { it.toTrack(trackId) }
             }
@@ -110,7 +109,7 @@ class HikkaApi(
             with(json) {
                 authClient.newCall(GET(url.toString()))
                     .awaitSuccess()
-                    .parseAs<HKFullManga>()
+                    .parseAs<HKMangaResponse>()
                     .toTrack(trackId)
             }
         }
@@ -151,7 +150,7 @@ class HikkaApi(
             with(json) {
                 authClient.newCall(PUT(url.toString(), body=payload.toString().toRequestBody(jsonMime)))
                     .awaitSuccess()
-                    .parseAs<HKReadData>()
+                    .parseAs<HKReadResponse>()
                     .toTrack(trackId)
             }
         }
@@ -175,8 +174,8 @@ class HikkaApi(
 
         fun refreshTokenRequest(oauth: HKOAuth): Request {
             val headers = Headers.Builder()
-                .add("auth", oauth.secret)
-                .add("Cookie", "auth=${oauth.secret}")
+                .add("auth", oauth.accessToken)
+                .add("Cookie", "auth=${oauth.accessToken}")
                 .build()
 
             return GET("$BASE_API_URL/auth/token/info", headers = headers)

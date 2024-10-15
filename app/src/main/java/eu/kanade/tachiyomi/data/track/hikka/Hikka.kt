@@ -98,7 +98,7 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
                 }
             }
         }
-        return track
+        return api.updateUserManga(track)
     }
 
     override suspend fun bind(
@@ -106,21 +106,16 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
         hasReadChapters: Boolean,
     ): eu.kanade.tachiyomi.data.database.models.Track {
         val remoteTrack = api.getManga(track)
-        return if (remoteTrack != null) {
-            track.copyPersonalFrom(remoteTrack)
-            track.library_id = remoteTrack.library_id
 
-            if (track.status != COMPLETED) {
-                val isRereading = track.status == REREADING
-                track.status = if (!isRereading && hasReadChapters) READING else track.status
-            }
+        track.copyPersonalFrom(remoteTrack)
+        track.library_id = remoteTrack.library_id
 
-            update(track)
-        } else {
-            track.status = if (hasReadChapters) READING else PLAN_TO_READ
-            track.score = 0.0
-            add(track)
+        if (track.status != COMPLETED) {
+            val isRereading = track.status == REREADING
+            track.status = if (!isRereading && hasReadChapters) READING else track.status
         }
+
+        return update(track)
     }
 
     private suspend fun add(track: eu.kanade.tachiyomi.data.database.models.Track): eu.kanade.tachiyomi.data.database.models.Track {
@@ -145,7 +140,7 @@ class Hikka(id: Long) : BaseTracker(id, "Hikka"), DeletableTracker {
             val oauth = HKOAuth(code, System.currentTimeMillis() / 1000 + 30 * 60)
             interceptor.setAuth(oauth)
             val reference =  api.getCurrentUser().reference
-            saveCredentials(reference, oauth.secret)
+            saveCredentials(reference, oauth.accessToken)
         } catch (e: Throwable) {
             logout()
         }

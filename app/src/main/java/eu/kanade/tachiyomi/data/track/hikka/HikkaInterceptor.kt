@@ -30,8 +30,8 @@ class HikkaInterceptor(private val hikka: Hikka) : Interceptor {
         }
 
         val authRequest = originalRequest.newBuilder()
-            .addHeader("auth", oauth!!.secret)
-            .addHeader("Cookie", "auth=${oauth!!.secret}")
+            .addHeader("auth", oauth!!.accessToken)
+            .addHeader("Cookie", "auth=${oauth!!.accessToken}")
             .addHeader("accept", "application/json")
             .build()
 
@@ -69,7 +69,7 @@ class HikkaInterceptor(private val hikka: Hikka) : Interceptor {
                 val responseBody = response.body?.string() ?: return@runCatching null
                 val jsonObject = JSONObject(responseBody)
 
-                val secret = oauth!!.secret
+                val secret = oauth!!.accessToken
                 val expiration = jsonObject.getLong("expiration")
 
                 HKOAuth(secret, expiration)
