@@ -18,7 +18,7 @@ import kotlinx.serialization.json.decodeFromStream
 import logcat.LogPriority
 import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
-import nl.adaptivity.xmlutil.AndroidXmlReader
+import nl.adaptivity.xmlutil.core.AndroidXmlReader
 import nl.adaptivity.xmlutil.serialization.XML
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.storage.extension
@@ -55,10 +55,10 @@ actual class LocalSource(
     private val json: Json by injectLazy()
     private val xml: XML by injectLazy()
 
-    @Suppress("PrivatePropertyName", "ktlint:standard:property-naming")
+    @Suppress("PrivatePropertyName")
     private val PopularFilters = FilterList(OrderBy.Popular(context))
 
-    @Suppress("PrivatePropertyName", "ktlint:standard:property-naming")
+    @Suppress("PrivatePropertyName")
     private val LatestFilters = FilterList(OrderBy.Latest(context))
 
     override val name: String = context.stringResource(MR.strings.local_source)
